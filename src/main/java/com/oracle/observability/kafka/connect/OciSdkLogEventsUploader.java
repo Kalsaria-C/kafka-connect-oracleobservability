@@ -42,7 +42,7 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
     }
 
     private static LogAnalytics createClient(OracleObservabilitySinkConfig config) {
-        try {
+        try (SdkClassLoaderScope ignored = SdkClassLoaderScope.open()) {
             Path path = Path.of(config.getString(OracleObservabilitySinkConfig.CONFIG_FILE));
             if (!path.isAbsolute()) {
                 throw new ConnectException("oci.config.file must be an absolute path");
@@ -97,7 +97,7 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
                 .uploadLogEventsFileDetails(chunk.openStream())
                 .build();
         long started = System.nanoTime();
-        try {
+        try (SdkClassLoaderScope ignored = SdkClassLoaderScope.open()) {
             UploadLogEventsFileResponse response = client.uploadLogEventsFile(request);
             if (response == null) {
                 LOG.debug("Log Events upload failed: no response, records={}, bytes={}, latencyMs={}",
