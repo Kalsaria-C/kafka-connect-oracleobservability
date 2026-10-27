@@ -38,10 +38,12 @@ class SdkHttpIntegrationTest {
                 attempt = requests.size();
             }
             exchange.getResponseHeaders().add("opc-request-id", "local-" + attempt);
+            exchange.getResponseHeaders().add("Set-Cookie", "session=sensitive-cookie");
             if (attempt == 2) {
                 byte[] error = "{\"code\":\"InternalServerError\",\"message\":\"try again\"}"
                         .getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.getResponseHeaders().add("Retry-After", "1");
                 exchange.sendResponseHeaders(503, error.length);
                 exchange.getResponseBody().write(error);
             } else {
@@ -61,7 +63,10 @@ class SdkHttpIntegrationTest {
                 .fingerprint("00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00")
                 .privateKeySupplier(() -> new ByteArrayInputStream(pem.getBytes(StandardCharsets.UTF_8)))
                 .build();
+        List<Object[]> diagnostics = new ArrayList<>();
         LogAnalyticsClient client = LogAnalyticsClient.builder()
+                .clientConfigurator(UploadResponseDiagnostics.clientConfigurator(
+                        UploadResponseDiagnosticsTest.logger(diagnostics, true)))
                 .configuration(ClientConfiguration.builder().connectionTimeoutMillis(2000).readTimeoutMillis(2000)
                         .retryConfiguration(RetryConfiguration.NO_RETRY_CONFIGURATION).build())
                 .build(auth);
@@ -74,6 +79,13 @@ class SdkHttpIntegrationTest {
             assertEquals(2, requests.size(), "SDK must not hide an extra automatic retry");
             task.put(records);
             assertEquals(4, requests.size());
+            assertEquals(4, diagnostics.size(), "Header logging must preserve the response and SDK retry behavior");
+            assertEquals(503, diagnostics.get(1)[1]);
+            var failedHeaders = (java.util.Map<?, ?>) diagnostics.get(1)[2];
+            assertEquals(List.of("1"), failedHeaders.get("retry-after"));
+            assertEquals(List.of("local-2"), failedHeaders.get("opc-request-id"));
+            assertEquals(List.of("[REDACTED]"), failedHeaders.get("set-cookie"));
+            assertFalse(failedHeaders.toString().contains("sensitive-cookie"));
             Request failed = requests.get(1);
             Request retried = requests.get(2);
             assertArrayEquals(failed.body(), retried.body());

@@ -51,6 +51,7 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
                     .build();
             LogAnalyticsClient result = LogAnalyticsClient.builder()
                     .configuration(clientConfig)
+                    .clientConfigurator(UploadResponseDiagnostics.clientConfigurator(LOG))
                     .build(new ConfigFileAuthenticationDetailsProvider(file));
             try {
                 result.setRegion(config.getString(OracleObservabilitySinkConfig.REGION));
@@ -81,9 +82,13 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
         try {
             UploadLogEventsFileResponse response = client.uploadLogEventsFile(request);
             if (response == null) {
+                LOG.debug("Log Events upload failed: no response, records={}, bytes={}, latencyMs={}",
+                        chunk.recordCount(), chunk.payloadBytes(), (System.nanoTime() - started) / 1_000_000);
                 throw new RetriableException("OCI returned no response");
             }
             int status = response.get__httpStatusCode__();
+            LOG.debug("Log Events upload response: status={}, opcRequestId={}, opcObjectId={}, timeCreated={}",
+                    status, response.getOpcRequestId(), response.getOpcObjectId(), response.getTimeCreated());
             if (status != 200) {
                 throwForStatus(status, response.getOpcRequestId());
             }
@@ -91,6 +96,7 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
                     chunk.recordCount(), chunk.payloadBytes(), (System.nanoTime() - started) / 1_000_000,
                     response.getOpcRequestId());
         } catch (BmcException ex) {
+            UploadResponseDiagnostics.logFailure(LOG, ex, chunk, (System.nanoTime() - started) / 1_000_000);
             // Connect logs exception causes. Do not propagate response bodies that can echo log data.
             throwForStatus(ex.getStatusCode(), ex.getOpcRequestId());
         }

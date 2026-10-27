@@ -12,7 +12,7 @@
     "oci.config.file": "/REPLACE_ME/oci/config",
     "oci.config.profile": "DEFAULT",
     "oci.la.log.group.id": "REPLACE_WITH_ACTUAL_LOG_GROUP_OCID",
-    "oci.la.log.source.name": "Kafka Hackathon Application Logs",
+    "oci.la.log.source.name": "Kafka Application Logs",
     "oci.la.log.path": "kafka-hackathon.log",
     "oci.la.batch.max.records": "100",
     "oci.la.batch.max.bytes": "1048576",

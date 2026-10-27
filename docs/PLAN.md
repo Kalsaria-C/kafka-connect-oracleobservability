@@ -19,17 +19,20 @@
 
 ## Verification evidence
 
-`mvn clean verify` passed on JDK 17: **42 pre-packaging tests plus 1 packaged-plugin integration test**,
+`mvn clean verify` passed on JDK 17: **47 pre-packaging tests plus 1 packaged-plugin integration test**,
 zero failures and zero skipped tests. The local HTTP test uses the actual SDK, Jersey HTTP provider and signer,
-then responds 503 before success to verify retry ownership, exact request replay and chunk progress.
+then responds 503 before success to verify retry ownership, exact request replay, chunk progress and redacted header diagnostics.
+Upload diagnostics cover success/failure response headers, sanitized SDK error messages and chunk timing at DEBUG level.
 The packaged-plugin test starts the SDK from ZIP dependencies with only Kafka/SLF4J APIs supplied by its parent classloader.
 The generator was separately checked with 250 JSON events, unique IDs, UTC timestamps and 16000-byte messages.
 See TESTING.md for the test inventory and remaining live acceptance checks.
 
 ## Deferred
 
-Live OCI/Kafka acceptance requires the verified namespace, log group OCID, source/parser and runtime credentials.
-These are deliberately placeholders in the shared configuration. No production upload was performed by the local build.
+Destination identifiers and environment-specific source/parser names belong in Git-ignored local configuration.
+The shared configuration uses placeholders and example resource names.
+Live OCI/Kafka acceptance still requires runtime credentials, parser preview and a successful indexed upload.
+No live OCI upload was performed by the local build.
 Principal auth, DLQ, async delivery, timer batching, multiple destination routing, compression, dashboards and saved searches are future work.
 
 ## Design choices
