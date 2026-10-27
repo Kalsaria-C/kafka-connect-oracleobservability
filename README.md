@@ -41,6 +41,7 @@ Verify the source actually exists and its exact API name matches the config. Do 
 | `oci.config.file` | Required absolute profile-file path |
 | `oci.config.profile` | `DEFAULT` |
 | `oci.auth.type` | `config_file` only |
+| `oci.proxy.host`, `oci.proxy.port` | Optional HTTP proxy hostname and port (default 80); blank host leaves SDK routing unchanged |
 | `oci.la.log.group.id` | Required actual log group OCID |
 | `oci.la.log.source.name` | Required exact source name |
 | `oci.la.log.path` | Optional logical log path |

@@ -7,6 +7,9 @@ package com.oracle.observability.kafka.connect;
 import com.oracle.bmc.ClientConfiguration;
 import com.oracle.bmc.ConfigFileReader;
 import com.oracle.bmc.auth.ConfigFileAuthenticationDetailsProvider;
+import com.oracle.bmc.http.ClientConfigurator;
+import com.oracle.bmc.http.client.ProxyConfiguration;
+import com.oracle.bmc.http.client.StandardClientProperties;
 import com.oracle.bmc.loganalytics.LogAnalytics;
 import com.oracle.bmc.loganalytics.LogAnalyticsClient;
 import com.oracle.bmc.loganalytics.model.PayloadType;
@@ -15,6 +18,8 @@ import com.oracle.bmc.loganalytics.responses.UploadLogEventsFileResponse;
 import com.oracle.bmc.model.BmcException;
 import com.oracle.bmc.retrier.RetryConfiguration;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.nio.file.Path;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.errors.RetriableException;
@@ -51,7 +56,7 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
                     .build();
             LogAnalyticsClient result = LogAnalyticsClient.builder()
                     .configuration(clientConfig)
-                    .clientConfigurator(UploadResponseDiagnostics.clientConfigurator(LOG))
+                    .clientConfigurator(httpClientConfigurator(config))
                     .build(new ConfigFileAuthenticationDetailsProvider(file));
             try {
                 result.setRegion(config.getString(OracleObservabilitySinkConfig.REGION));
@@ -63,6 +68,19 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
         } catch (IOException | RuntimeException ex) {
             throw new ConnectException("Cannot initialize OCI client; verify config file, profile, key and region", ex);
         }
+    }
+
+    /** Composes response diagnostics with an optional per-client HTTP proxy. */
+    static ClientConfigurator httpClientConfigurator(OracleObservabilitySinkConfig config) {
+        return builder -> {
+            UploadResponseDiagnostics.clientConfigurator(LOG).customizeClient(builder);
+            String host = config.getString(OracleObservabilitySinkConfig.PROXY_HOST);
+            if (!host.isBlank()) {
+                var address = InetSocketAddress.createUnresolved(host, config.getInt(OracleObservabilitySinkConfig.PROXY_PORT));
+                builder.property(StandardClientProperties.PROXY,
+                        new ProxyConfiguration(new Proxy(Proxy.Type.HTTP, address)));
+            }
+        };
     }
 
     @Override

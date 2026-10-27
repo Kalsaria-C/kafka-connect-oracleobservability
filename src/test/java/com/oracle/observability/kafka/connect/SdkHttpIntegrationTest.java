@@ -52,17 +52,7 @@ class SdkHttpIntegrationTest {
             exchange.close();
         });
         server.start();
-        var generator = KeyPairGenerator.getInstance("RSA");
-        generator.initialize(2048);
-        String pem = "-----BEGIN PRIVATE KEY-----\n" + Base64.getMimeEncoder(64, new byte[] {'\n'})
-                .encodeToString(generator.generateKeyPair().getPrivate().getEncoded())
-                + "\n-----END PRIVATE KEY-----\n";
-        var auth = SimpleAuthenticationDetailsProvider.builder()
-                .tenantId("ocid1.tenancy.oc1..test")
-                .userId("ocid1.user.oc1..test")
-                .fingerprint("00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00")
-                .privateKeySupplier(() -> new ByteArrayInputStream(pem.getBytes(StandardCharsets.UTF_8)))
-                .build();
+        var auth = testAuthentication();
         List<Object[]> diagnostics = new ArrayList<>();
         LogAnalyticsClient client = LogAnalyticsClient.builder()
                 .clientConfigurator(UploadResponseDiagnostics.clientConfigurator(
@@ -108,6 +98,58 @@ class SdkHttpIntegrationTest {
             task.stop();
             server.stop(0);
         }
+    }
+
+    @Test
+    void realSdkUploadsThroughConfiguredHttpProxy() throws Exception {
+        List<Request> requests = new ArrayList<>();
+        HttpServer proxy = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        proxy.createContext("/", exchange -> {
+            requests.add(new Request(exchange.getRequestMethod(), exchange.getRequestURI().toString(),
+                    exchange.getRequestBody().readAllBytes(), null,
+                    exchange.getRequestHeaders().getFirst("Authorization") != null));
+            exchange.getResponseHeaders().add("opc-request-id", "local-proxy");
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        proxy.start();
+        var props = TestFixtures.properties();
+        props.put(OracleObservabilitySinkConfig.PROXY_HOST, "127.0.0.1");
+        props.put(OracleObservabilitySinkConfig.PROXY_PORT, Integer.toString(proxy.getAddress().getPort()));
+        var config = new OracleObservabilitySinkConfig(props);
+        LogAnalyticsClient client = null;
+        try {
+            client = LogAnalyticsClient.builder().clientConfigurator(OciSdkLogEventsUploader.httpClientConfigurator(config))
+                    .configuration(ClientConfiguration.builder().connectionTimeoutMillis(2000).readTimeoutMillis(2000)
+                            .retryConfiguration(RetryConfiguration.NO_RETRY_CONFIGURATION).build())
+                    .build(testAuthentication());
+            // The destination cannot resolve directly; the local proxy must receive the absolute-form request.
+            client.setEndpoint("http://unreachable.invalid");
+            var chunk = new LogEventsChunker(config).chunk(TestFixtures.records(1)).get(0);
+            new OciSdkLogEventsUploader(config, client).upload(chunk);
+            assertEquals(1, requests.size());
+            assertTrue(requests.get(0).uri().startsWith("http://unreachable.invalid/20200601/"));
+            assertEquals("POST", requests.get(0).method());
+            assertTrue(requests.get(0).signed());
+            assertArrayEquals(chunk.payload(), requests.get(0).body());
+        } finally {
+            if (client != null) { client.close(); }
+            proxy.stop(0);
+        }
+    }
+
+    private static SimpleAuthenticationDetailsProvider testAuthentication() throws Exception {
+        var generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        String pem = "-----BEGIN PRIVATE KEY-----\n" + Base64.getMimeEncoder(64, new byte[] {'\n'})
+                .encodeToString(generator.generateKeyPair().getPrivate().getEncoded())
+                + "\n-----END PRIVATE KEY-----\n";
+        return SimpleAuthenticationDetailsProvider.builder()
+                .tenantId("ocid1.tenancy.oc1..test")
+                .userId("ocid1.user.oc1..test")
+                .fingerprint("00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00")
+                .privateKeySupplier(() -> new ByteArrayInputStream(pem.getBytes(StandardCharsets.UTF_8)))
+                .build();
     }
 
     private record Request(String method, String uri, byte[] body, String token, boolean signed) { }

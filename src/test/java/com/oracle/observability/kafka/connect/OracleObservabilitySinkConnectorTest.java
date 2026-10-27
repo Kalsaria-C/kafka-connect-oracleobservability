@@ -10,6 +10,8 @@ import java.util.ServiceLoader;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.connect.connector.Connector;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class OracleObservabilitySinkConnectorTest {
     @Test
@@ -43,6 +45,23 @@ class OracleObservabilitySinkConnectorTest {
         var entityProps = TestFixtures.properties();
         entityProps.put(OracleObservabilitySinkConfig.ENTITY_TYPE, "Host (Linux)");
         assertThrows(ConfigException.class, () -> new OracleObservabilitySinkConfig(entityProps));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"http://proxy.example.com", "proxy.example.com:80", "user@proxy.example.com", "proxy host"})
+    void rejectsProxyUrlsAndCredentialsInHostname(String host) {
+        var props = TestFixtures.properties();
+        props.put(OracleObservabilitySinkConfig.PROXY_HOST, host);
+        ConfigException error = assertThrows(ConfigException.class, () -> new OracleObservabilitySinkConfig(props));
+        assertFalse(error.getMessage().contains(host));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"0", "65536", "invalid"})
+    void rejectsInvalidProxyPorts(String port) {
+        var props = TestFixtures.properties();
+        props.put(OracleObservabilitySinkConfig.PROXY_PORT, port);
+        assertThrows(ConfigException.class, () -> new OracleObservabilitySinkConfig(props));
     }
 
     @Test

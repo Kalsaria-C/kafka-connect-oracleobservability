@@ -103,6 +103,26 @@ curl --fail http://localhost:8083/connectors/oci-la-hackathon/status
 FileStream already committed its records. Generate a **new run** after the switch; old records will not automatically replay into LA.
 Use a separate connector/group for deliberate historical replay. Keep secrets out of the JSON and logs.
 
+## HTTP proxy for the OCI client
+
+If the worker needs an HTTP proxy for OCI egress, add these settings to the inner `config` object in your local JSON:
+
+```json
+"oci.proxy.host": "proxy.example.com",
+"oci.proxy.port": "80"
+```
+
+Use a hostname only, without `http://`, port, path or credentials. This initial proxy support is unauthenticated.
+The setting applies only to the OCI SDK client; Kafka broker connections are unaffected.
+A blank or absent host leaves SDK routing unchanged. Do not assume shell `https_proxy` or `no_proxy` variables
+configure this SDK client. An explicit proxy host sends this client's requests through that proxy.
+Rebuild and reinstall the full plugin ZIP, restart the worker, then apply the updated connector config.
+Keep corporate proxy hostnames and other deployment values in Git-ignored local files.
+
+An unsigned HEAD request to the OCI service root can return 404 after successful TLS; this checks network reachability,
+not upload authorization. If curl works only through a proxy while Java reports status -1, configure the OCI proxy
+and inspect the DEBUG error message. Java and curl use separate certificate trust stores.
+
 ## Upload response debug logging
 
 After installing the rebuilt plugin and restarting the worker, enable response metadata logging on that worker:

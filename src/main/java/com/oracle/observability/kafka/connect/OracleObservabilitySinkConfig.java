@@ -16,6 +16,8 @@ public final class OracleObservabilitySinkConfig extends AbstractConfig {
     public static final String AUTH_TYPE = "oci.auth.type";
     public static final String CONFIG_FILE = "oci.config.file";
     public static final String CONFIG_PROFILE = "oci.config.profile";
+    public static final String PROXY_HOST = "oci.proxy.host";
+    public static final String PROXY_PORT = "oci.proxy.port";
     public static final String LOG_GROUP_ID = "oci.la.log.group.id";
     public static final String LOG_SOURCE_NAME = "oci.la.log.source.name";
     public static final String LOG_PATH = "oci.la.log.path";
@@ -52,6 +54,13 @@ public final class OracleObservabilitySinkConfig extends AbstractConfig {
         for (String name : new String[] {LOG_PATH, ENTITY_ID, ENTITY_TYPE, LOG_SET, TIMEZONE}) {
             def.define(name, ConfigDef.Type.STRING, "", ConfigDef.Importance.MEDIUM, "Optional fixed " + name + ".");
         }
+        def.define(PROXY_HOST, ConfigDef.Type.STRING, "", (name, value) -> {
+            String host = (String) value;
+            if (host == null || (!host.isEmpty() && !host.matches("[A-Za-z0-9._-]+"))) {
+                throw new ConfigException(name, "[REDACTED]", "must be a hostname or IPv4 address without scheme, port or credentials");
+            }
+        }, ConfigDef.Importance.MEDIUM, "Optional unauthenticated HTTP proxy hostname; blank leaves SDK routing unchanged.");
+        integer(def, PROXY_PORT, 80, 1, 65_535, "HTTP proxy port when a proxy hostname is configured.");
         integer(def, MAX_RECORDS, 100, 1, 12_000, "Maximum records per request.");
         integer(def, MAX_BYTES, MAX_PAYLOAD_BYTES, 128, MAX_PAYLOAD_BYTES,
                 "Maximum complete JSON payload bytes, including envelope and escaping.");

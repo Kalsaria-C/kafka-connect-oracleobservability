@@ -6,6 +6,9 @@ package com.oracle.observability.kafka.connect;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.oracle.bmc.http.client.HttpClientBuilder;
+import com.oracle.bmc.http.client.ProxyConfiguration;
+import com.oracle.bmc.http.client.StandardClientProperties;
 import com.oracle.bmc.loganalytics.LogAnalytics;
 import com.oracle.bmc.loganalytics.model.PayloadType;
 import com.oracle.bmc.loganalytics.requests.UploadLogEventsFileRequest;
@@ -52,6 +55,27 @@ class OciSdkLogEventsUploaderTest {
         assertArrayEquals(chunk.payload(), request.get().getUploadLogEventsFileDetails().readAllBytes());
         uploader.close();
         assertTrue(closed.get());
+    }
+
+    @Test
+    void leavesProxyRoutingUnchangedUnlessConfigured() {
+        AtomicReference<ProxyConfiguration> proxyConfig = new AtomicReference<>();
+        HttpClientBuilder builder = (HttpClientBuilder) Proxy.newProxyInstance(HttpClientBuilder.class.getClassLoader(),
+                new Class<?>[] {HttpClientBuilder.class}, (proxy, method, args) -> {
+                    assertEquals("property", method.getName());
+                    if (args[0] == StandardClientProperties.PROXY) { proxyConfig.set((ProxyConfiguration) args[1]); }
+                    return proxy;
+                });
+        OciSdkLogEventsUploader.httpClientConfigurator(TestFixtures.config()).customizeClient(builder);
+        assertNull(proxyConfig.get());
+        var props = TestFixtures.properties();
+        props.put(OracleObservabilitySinkConfig.PROXY_HOST, "proxy.example.com");
+        props.put(OracleObservabilitySinkConfig.PROXY_PORT, "8080");
+        OciSdkLogEventsUploader.httpClientConfigurator(new OracleObservabilitySinkConfig(props)).customizeClient(builder);
+        assertEquals(java.net.Proxy.Type.HTTP, proxyConfig.get().getProxy().type());
+        var address = (java.net.InetSocketAddress) proxyConfig.get().getProxy().address();
+        assertEquals("proxy.example.com", address.getHostString());
+        assertEquals(8080, address.getPort());
     }
 
     @ParameterizedTest

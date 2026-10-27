@@ -8,12 +8,12 @@ Command: `mvn clean verify`, using JDK 17.0.8 and Maven 3.9.9.
 | --- | ---: | --- |
 | LogEventsChunkerTest | 14 | Passed |
 | OracleObservabilitySinkTaskTest | 8 | Passed |
-| OracleObservabilitySinkConnectorTest | 3 | Passed |
-| OciSdkLogEventsUploaderTest | 16 | Passed |
+| OracleObservabilitySinkConnectorTest | 10 | Passed |
+| OciSdkLogEventsUploaderTest | 17 | Passed |
 | UploadResponseDiagnosticsTest | 5 | Passed |
-| SdkHttpIntegrationTest | 1 | Passed |
+| SdkHttpIntegrationTest | 2 | Passed |
 | PackagedPluginIT | 1 | Passed |
-| Total | 48 | Zero failures, errors or skipped checks |
+| Total | 57 | Zero failures, errors or skipped checks |
 
 - Count boundaries: 0, 1, 99, 100, 101 and 250 records.
 - Exact payload-byte fit and one-byte overflow, including commas and envelope overhead.
@@ -25,6 +25,8 @@ Command: `mvn clean verify`, using JDK 17.0.8 and Maven 3.9.9.
 - Real SDK HTTP calls with a test-only ephemeral signing key and local server; no OCI calls or real credentials.
 - Success/failure response header interception preserves SDK error handling and retry behavior; a 503 exposes its request ID and Retry-After while cookies are redacted.
 - Diagnostic field/header bounds, common credential redaction, single-line output, disabled DEBUG behavior and transport-error context.
+- Explicit HTTP proxy host/port validation and unchanged routing when no proxy host is configured.
+- A signed real-SDK upload reaches a local HTTP proxy for an unresolvable destination, preserving request bytes. HTTPS tunneling and corporate-network connectivity require live verification.
 - ZIP inspection and isolated plugin discovery/SDK initialization, with Kafka and SLF4J supplied by the worker parent.
 
 The generator also passed a standalone 250-event check with unique IDs, current UTC timestamps
