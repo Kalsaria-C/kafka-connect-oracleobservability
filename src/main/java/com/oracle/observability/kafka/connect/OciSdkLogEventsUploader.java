@@ -60,6 +60,8 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
                     .build(new ConfigFileAuthenticationDetailsProvider(file));
             try {
                 result.setRegion(config.getString(OracleObservabilitySinkConfig.REGION));
+                LOG.info("OCI Log Events transport initialized: {}",
+                        UploadFailureDiagnostics.transportContext(config, result.getEndpoint()));
                 return result;
             } catch (RuntimeException ex) {
                 result.close();
@@ -96,12 +98,17 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
                 .retryConfiguration(RetryConfiguration.NO_RETRY_CONFIGURATION)
                 .uploadLogEventsFileDetails(chunk.openStream())
                 .build();
+        String clientRequestId = request.getOpcRequestId();
         long started = System.nanoTime();
+        LOG.debug("Log Events upload attempt: clientRequestId={}, records={}, bytes={}",
+                clientRequestId, chunk.recordCount(), chunk.payloadBytes());
         try (SdkClassLoaderScope ignored = SdkClassLoaderScope.open()) {
             UploadLogEventsFileResponse response = client.uploadLogEventsFile(request);
             if (response == null) {
-                LOG.debug("Log Events upload failed: no response, records={}, bytes={}, latencyMs={}",
-                        chunk.recordCount(), chunk.payloadBytes(), (System.nanoTime() - started) / 1_000_000);
+                LOG.warn("Log Events upload returned no response: clientRequestId={}, records={}, bytes={}, "
+                                + "latencyMs={}, transport={}", clientRequestId, chunk.recordCount(), chunk.payloadBytes(),
+                        (System.nanoTime() - started) / 1_000_000,
+                        UploadFailureDiagnostics.transportContext(config, endpointForDiagnostics()));
                 throw new RetriableException("OCI returned no response");
             }
             int status = response.get__httpStatusCode__();
@@ -114,9 +121,27 @@ public final class OciSdkLogEventsUploader implements LogEventsUploader {
                     chunk.recordCount(), chunk.payloadBytes(), (System.nanoTime() - started) / 1_000_000,
                     response.getOpcRequestId());
         } catch (BmcException ex) {
+            UploadFailureDiagnostics.logFailure(LOG, ex, chunk, (System.nanoTime() - started) / 1_000_000,
+                    clientRequestId, config, endpointForDiagnostics());
             UploadResponseDiagnostics.logFailure(LOG, ex, chunk, (System.nanoTime() - started) / 1_000_000);
             // Connect logs exception causes. Do not propagate response bodies that can echo log data.
             throwForStatus(ex.getStatusCode(), ex.getOpcRequestId());
+        } catch (ConnectException ex) {
+            throw ex;
+        } catch (RuntimeException | LinkageError ex) {
+            UploadFailureDiagnostics.logFailure(LOG, ex, chunk, (System.nanoTime() - started) / 1_000_000,
+                    clientRequestId, config, endpointForDiagnostics());
+            // Preserve fail-fast behavior without letting Connect print a payload-bearing exception chain.
+            throw new ConnectException("OCI upload failed before a usable response: clientRequestId=" + clientRequestId
+                    + ", causeType=" + ex.getClass().getName() + "; inspect upload failure diagnostics");
+        }
+    }
+
+    private String endpointForDiagnostics() {
+        try {
+            return client.getEndpoint();
+        } catch (RuntimeException ex) {
+            return null; // Diagnostics must not replace the original upload failure.
         }
     }
 

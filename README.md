@@ -81,6 +81,48 @@ No durable deduplication or exactly-once indexing is claimed.
 Operational logs contain record/byte counts, timing, retry delay and OCI request IDs. Log content and credentials are omitted.
 API acceptance cannot report later parser/indexing failures; inspect the run in Log Explorer.
 
+## Diagnosing uploads with status -1 and no request ID
+
+A status of `-1` means no usable HTTP status was available to the connector. A null server
+`opcRequestId` does not by itself identify an IAM problem or prove the request never reached OCI.
+The cause can be DNS, routing, a proxy, TLS, a timeout, signing, or an SDK/provider problem.
+
+Upload failures now emit a `WARN` named `Log Events upload failure diagnostics` containing:
+
+- The client-generated `clientRequestId`, which exists even if the server request ID is missing.
+- HTTP status availability, SDK client-side/timeout flags, record/byte counts and elapsed time.
+- Endpoint origin, region, explicit proxy host/port, HTTP timeouts and Java version.
+- A bounded chain of exception **types**, a diagnostic category and a suggested investigation.
+
+Client initialization logs the same transport settings at `INFO`. Endpoint paths, namespace, log group,
+profile/key paths, credentials and request bodies are excluded from these new diagnostics.
+Raw nested exception messages and raw exception objects are deliberately excluded because they can
+contain customer data or credentials. `DEBUG` adds bounded class/method/line stack locations, an
+upload-attempt client request ID, and the existing sanitized response/header diagnostics.
+
+To enable connector DEBUG logging temporarily on a running worker (adjust the REST port if needed):
+
+```sh
+curl --noproxy '*' --fail-with-body -X PUT \
+  http://localhost:8084/admin/loggers/com.oracle.observability.kafka.connect \
+  -H 'Content-Type: application/json' --data '{"level":"DEBUG"}'
+```
+
+Reproduce one failure and collect the `upload failure diagnostics` and `failure stack locations`
+lines with the same `clientRequestId`. Restore the previous logging level afterward; for an INFO default,
+repeat the command with `{"level":"INFO"}`. Avoid broad HTTP wire logging, which can expose signed headers.
+The logger setting applies to that worker; enable it on whichever worker hosts the failing task.
+
+For a worker on a managed Kafka instance, verify outbound access from **that instance** to the
+logged Log Analytics endpoint on port 443, or to the configured HTTP proxy. Being able to read Kafka
+records only verifies the Kafka connection. Check DNS, subnet routes/NAT or applicable service-gateway
+routing, NSG/security-list egress, and the worker JVM's TLS truststore. A successful `curl` using an
+`https_proxy` environment variable does not establish that the connector uses the same proxy;
+configure `oci.proxy.host` and `oci.proxy.port` explicitly when required.
+
+Build and install the new plugin ZIP on every worker and restart the workers to load the updated code.
+Keep the existing internal topics and consumer groups; no connector offset reset is needed.
+
 ## Implementation status
 
 See [PLAN.md](docs/PLAN.md) for completed stages, validation evidence and the live handoff.

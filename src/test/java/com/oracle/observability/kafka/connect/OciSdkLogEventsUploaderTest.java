@@ -97,6 +97,51 @@ class OciSdkLogEventsUploaderTest {
         assertNull(ex.getCause(), "Service response bodies must not leak through logged exception causes");
     }
 
+    @Test
+    void wrappedDnsFailureRemainsRetriableWithoutLeakingTheOriginalCause() {
+        var error = new BmcException(-1, null, "sensitive SDK message", null,
+                new java.net.UnknownHostException("sensitive hostname"));
+        LogAnalytics client = failingClient(error);
+        var chunk = new LogEventsChunker(TestFixtures.config()).chunk(TestFixtures.records(1)).get(0);
+        var failure = assertThrows(RetriableException.class,
+                () -> new OciSdkLogEventsUploader(TestFixtures.config(), client).upload(chunk));
+        assertNull(failure.getCause());
+        assertFalse(failure.getMessage().contains("sensitive"));
+    }
+
+    @Test
+    void unexpectedClientRuntimeFailuresAndLinkageErrorsAreSanitizedAndFailFast() {
+        var chunk = new LogEventsChunker(TestFixtures.config()).chunk(TestFixtures.records(1)).get(0);
+        for (Throwable error : new Throwable[] {new IllegalStateException("sensitive request body"),
+                new NoClassDefFoundError("sensitive provider message")}) {
+            var failure = assertThrows(ConnectException.class,
+                    () -> new OciSdkLogEventsUploader(TestFixtures.config(), failingClient(error)).upload(chunk));
+            assertFalse(failure instanceof RetriableException);
+            assertNull(failure.getCause());
+            assertFalse(failure.getMessage().contains("sensitive"));
+            assertTrue(failure.getMessage().contains("clientRequestId=oracleobservability-" + chunk.retryToken()));
+            assertTrue(failure.getMessage().contains(error.getClass().getName()));
+        }
+    }
+
+    @Test
+    void missingResponseRemainsRetriable() {
+        LogAnalytics client = (LogAnalytics) Proxy.newProxyInstance(LogAnalytics.class.getClassLoader(),
+                new Class<?>[] {LogAnalytics.class}, (proxy, method, args) -> null);
+        var chunk = new LogEventsChunker(TestFixtures.config()).chunk(TestFixtures.records(1)).get(0);
+        assertThrows(RetriableException.class,
+                () -> new OciSdkLogEventsUploader(TestFixtures.config(), client).upload(chunk));
+    }
+
+    private LogAnalytics failingClient(Throwable error) {
+        return (LogAnalytics) Proxy.newProxyInstance(LogAnalytics.class.getClassLoader(),
+                new Class<?>[] {LogAnalytics.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("getEndpoint")) { return "https://logs.example.com"; }
+                    if (method.getName().equals("close")) { return null; }
+                    throw error;
+                });
+    }
+
     private OciSdkLogEventsUploader throwing(int status) {
         LogAnalytics client = (LogAnalytics) Proxy.newProxyInstance(LogAnalytics.class.getClassLoader(),
                 new Class<?>[] {LogAnalytics.class}, (proxy, method, args) -> {
